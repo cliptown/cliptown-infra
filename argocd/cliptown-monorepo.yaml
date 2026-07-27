@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cliptown-monorepo
+  name: cliptown
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -9,11 +9,13 @@ spec:
   project: default
   source:
     repoURL: https://github.com/cliptown/cliptown-infra.git
-    targetRevision: HEAD
-    path: templates
+    targetRevision: main
+    path: .
+    helm:
+      releaseName: cliptown-apps
   destination:
     server: https://kubernetes.default.svc
-    namespace: cliptown
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true
