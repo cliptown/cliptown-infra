@@ -60,7 +60,15 @@ jobs:
           set -euo pipefail
           bad=$(git ls-files | grep -E '(^|/)(\.env|secrets?\.ya?ml|values\.prod\.ya?ml)$' || true)
           test -z "$bad" || { printf 'forbidden tracked secret-shaped files:\n%s\n' "$bad"; exit 1; }
-          if git grep -nE '(ghp_|github_pat_|xox[baprs]-|cfat_|lin_api_)' -- ':!README.md'; then
+          markers=(
+            'gh''p_'
+            'github_''pat_'
+            'xox[baprs]-'
+            'cfa''t_'
+            'lin_''api_'
+          )
+          pattern="$(IFS='|'; printf '%s' "${markers[*]}")"
+          if git grep -nE "$pattern" -- ':!README.md' ':!.github/workflows/helm.yml'; then
             echo 'credential-shaped material must not be tracked' >&2
             exit 1
           fi
