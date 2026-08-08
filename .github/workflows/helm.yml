@@ -55,6 +55,20 @@ jobs:
           ! grep -Eq 'ghcr\.io/cliptown/cliptown-rust-backend\.rs:(latest|main|master|dev|HEAD)' "$file"
           grep -Fq 'kind: Application' /tmp/cliptown-rendered.yaml
           grep -Fq 'name: cliptown-api-canary' /tmp/cliptown-rendered.yaml
+      - name: Validate canary runtime prerequisites
+        run: |
+          set -euo pipefail
+          grep -Fq 'name: cliptown-canary' templates/cliptown-canary-namespace.yaml
+          grep -Fq 'pod-security.kubernetes.io/enforce: restricted' templates/cliptown-canary-namespace.yaml
+          grep -Fq 'shared-auth-base-url: https://auth.oresoftware.dev' templates/cliptown-api-canary-config.yaml
+          grep -Fq 'shared-auth-issuer: https://auth.oresoftware.dev' templates/cliptown-api-canary-config.yaml
+          grep -Fq 'kind: ClusterSecretStore' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'name: dd-cluster-secrets' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'key: dd/cliptown/canary/database-url' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'key: dd/shared-auth/introspect-secret' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'kind: Namespace' /tmp/cliptown-rendered.yaml
+          grep -Fq 'kind: ExternalSecret' /tmp/cliptown-rendered.yaml
+          grep -Fq 'name: cliptown-api-runtime' /tmp/cliptown-rendered.yaml
       - name: Check repository hygiene
         run: |
           set -euo pipefail

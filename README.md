@@ -8,14 +8,16 @@ The ClipTown API release contract is now published by `cliptown-rust-backend.rs`
 
 Live applications must not use `HEAD`, `latest`, development branches, or mutable image tags. Secrets must be supplied through external secret references rather than committed values files.
 
-The canary child application intentionally has no automated sync policy. Before the first manual sync, the `cliptown-canary` namespace must have:
+The canary child application intentionally has no automated sync policy. The root chart now creates the restricted `cliptown-canary` namespace, the non-secret shared-auth ConfigMap, and the ExternalSecret contract required by the application:
 
-- the reviewed backend `schema/schema.sql` applied to its canary PostgreSQL database;
-- Secret `cliptown-api-runtime` with `database-url` and `shared-auth-introspect-secret`;
-- ConfigMap `cliptown-api-runtime` with the reviewed HTTPS `shared-auth-base-url` and HTTPS `shared-auth-issuer`;
-- cluster/environment ingress, egress NetworkPolicy, and observability wiring appropriate to the canary.
+- `shared-auth-base-url = https://auth.oresoftware.dev`
+- `shared-auth-issuer = https://auth.oresoftware.dev`
+- `shared-auth-introspect-secret` is copied from existing ClusterSecretStore key `dd/shared-auth/introspect-secret`
+- `database-url` is copied from dedicated key `dd/cliptown/canary/database-url`
 
-The application-owned canary and rollback procedure lives in the pinned backend revision at `k8s/README.md`. Do not sync the child application until these prerequisites are present; `/readyz` is designed to stay unavailable when the transfer schema is missing.
+No value for either secret is committed. The remaining operator prerequisite is to seed `dd/cliptown/canary/database-url` in the existing `dd-cluster-secrets` backing store and apply the reviewed backend `schema/schema.sql` to that canary database. Environment ingress, egress NetworkPolicy, and observability wiring must also be reviewed before manual child-app sync.
+
+The application-owned canary and rollback procedure lives in the pinned backend revision at `k8s/README.md`. Do not sync the child application until the database key and schema exist; `/readyz` is designed to stay unavailable when the transfer schema is missing.
 
 ## Current canary release
 
@@ -31,4 +33,4 @@ helm lint . --strict
 helm template cliptown-apps .
 ```
 
-GitHub Actions additionally verifies the root Argo source, the exact canary backend revision and image digest, absence of floating canary references, and repository secret hygiene.
+GitHub Actions verifies the root Argo source, exact canary backend revision and image digest, restricted namespace, shared-auth HTTPS config, external-secret key references, absence of floating canary references, and repository secret hygiene.
