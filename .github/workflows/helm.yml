@@ -12,33 +12,77 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
         with:
           version: v3.17.3
       - name: Lint and render chart
         run: |
+          set -euo pipefail
           helm lint . --strict
           helm template cliptown-apps . > /tmp/cliptown-rendered.yaml
       - name: Validate root Argo application
         run: |
+          set -euo pipefail
           test -s argocd/cliptown-monorepo.yaml
           grep -Fq 'targetRevision: main' argocd/cliptown-monorepo.yaml
           grep -Fq 'path: .' argocd/cliptown-monorepo.yaml
           grep -Fq 'releaseName: cliptown-apps' argocd/cliptown-monorepo.yaml
-      - name: Reject floating live revisions and missing live sources
+      - name: Reject floating live revisions
         run: |
+          set -euo pipefail
           if grep -RInE 'targetRevision:[[:space:]]*(HEAD|master|dev|latest)' argocd templates 2>/dev/null; then
-            echo 'live GitOps applications must use reviewed immutable branch or release references' >&2
+            echo 'live GitOps applications must not use floating development revisions' >&2
             exit 1
           fi
-          if grep -RIn 'path: k8s' templates 2>/dev/null; then
-            echo 'backend k8s path is not published on main yet' >&2
-            exit 1
-          fi
+      - name: Validate ClipTown API canary contract
+        run: |
+          set -euo pipefail
+          file=templates/cliptown-api-canary.yaml
+          test -s "$file"
+          grep -Eq 'targetRevision: [0-9a-f]{40}$' "$file"
+          grep -Fq 'targetRevision: c1953e0519e952c682a4e59dc6a931aab7b29cad' "$file"
+          grep -Fq 'path: k8s' "$file"
+          grep -Eq 'ghcr\.io/cliptown/cliptown-rust-backend\.rs@sha256:[0-9a-f]{64}$' "$file"
+          grep -Fq 'sha256:749c4c9020012b4daebdcd04e51e37e47790668274940b5d3a8f9d00f8fd5fa9' "$file"
+          grep -Fq 'namespace: cliptown-canary' "$file"
+          ! grep -Eq 'targetRevision:[[:space:]]*(main|HEAD|master|dev|latest)$' "$file"
+          ! grep -Eq 'ghcr\.io/cliptown/cliptown-rust-backend\.rs:(latest|main|master|dev|HEAD)' "$file"
+          grep -Fq 'kind: Application' /tmp/cliptown-rendered.yaml
+          grep -Fq 'name: cliptown-api-canary' /tmp/cliptown-rendered.yaml
+      - name: Validate canary runtime prerequisites
+        run: |
+          set -euo pipefail
+          grep -Fq 'name: cliptown-canary' templates/cliptown-canary-namespace.yaml
+          grep -Fq 'pod-security.kubernetes.io/enforce: restricted' templates/cliptown-canary-namespace.yaml
+          grep -Fq 'shared-auth-base-url: https://auth.oresoftware.dev' templates/cliptown-api-canary-config.yaml
+          grep -Fq 'shared-auth-issuer: https://auth.oresoftware.dev' templates/cliptown-api-canary-config.yaml
+          grep -Fq 'kind: ClusterSecretStore' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'name: dd-cluster-secrets' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'key: dd/cliptown/canary/database-url' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'key: dd/shared-auth/introspect-secret' templates/cliptown-api-canary-secret.yaml
+          grep -Fq 'kind: Namespace' /tmp/cliptown-rendered.yaml
+          grep -Fq 'kind: ExternalSecret' /tmp/cliptown-rendered.yaml
+          grep -Fq 'name: cliptown-api-runtime' /tmp/cliptown-rendered.yaml
       - name: Check repository hygiene
         run: |
+          set -euo pipefail
           bad=$(git ls-files | grep -E '(^|/)(\.env|secrets?\.ya?ml|values\.prod\.ya?ml)$' || true)
           test -z "$bad" || { printf 'forbidden tracked secret-shaped files:\n%s\n' "$bad"; exit 1; }
+          markers=(
+            'gh''p_'
+            'github_''pat_'
+            'xox[baprs]-'
+            'cfa''t_'
+            'lin_''api_'
+          )
+          pattern="$(IFS='|'; printf '%s' "${markers[*]}")"
+          if git grep -nE "$pattern" -- ':!README.md' ':!.github/workflows/helm.yml'; then
+            echo 'credential-shaped material must not be tracked' >&2
+            exit 1
+          fi

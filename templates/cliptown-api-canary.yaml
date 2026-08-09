@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cliptown-api-canary
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/cliptown/cliptown-rust-backend.rs.git
+    targetRevision: c1953e0519e952c682a4e59dc6a931aab7b29cad
+    path: k8s
+    kustomize:
+      images:
+        - ghcr.io/cliptown/cliptown-rust-backend.rs=ghcr.io/cliptown/cliptown-rust-backend.rs@sha256:749c4c9020012b4daebdcd04e51e37e47790668274940b5d3a8f9d00f8fd5fa9
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cliptown-canary
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
