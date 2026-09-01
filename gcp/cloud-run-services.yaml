@@ -1,0 +1,60 @@
+apiVersion: infrastructure.ores.dev/v1alpha1
+kind: CloudRunRustFleetIndex
+metadata:
+  organization: cliptown
+  linearIssue: DEN-3443
+spec:
+  ownership:
+    deploymentRepository: ORESoftware/k8s-cluster
+    modulePath: gcp/cloud-run-rust-service
+    moduleRef: 549a85e2aea7d21dd1a1781ed4550a0665018039
+    moduleReview: ORESoftware/k8s-cluster#1452
+    contractRepository: ORESoftware/k8s-libs-and-shared-defs
+    contractPath: service-contract-rs
+    contractReview: ORESoftware/k8s-libs-and-shared-defs#47
+  googleCloud:
+    projectKey: cliptown
+    projectIdSource: central-project-map
+    region: us-central1
+    ingress: INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER
+    publicIam: forbidden
+    minInstances: 0
+    maxInstances: 3
+    imagePolicy: sha256-digest-only
+    runtimeIdentity: dedicated-service-account-per-service
+  neon:
+    organization: cliptown
+    project: canonical
+    credentialsSource: secret-manager
+  httpContract:
+    liveness:
+      path: /healthz
+      behavior: process-only-no-downstream-calls
+    readiness:
+      path: /readyz
+      behavior: fail-closed-until-startup-dependencies-and-admission-are-ready
+    buildIdentity:
+      path: /version
+      cacheControl: no-store
+    metrics:
+      path: /metrics
+      exposure: private-or-authenticated
+    gracefulDrain:
+      requirement: readyz-fails-before-traffic-drain-and-sigterm-is-bounded
+  services:
+    - role: web-server
+      repository: cliptown/cliptown-web-server.rs
+      serviceName: cliptown-web-server
+      deploymentState: blocked-until-contract-evidence
+    - role: admin-web-server
+      repository: cliptown/cliptown-admin-web-server.rs
+      serviceName: cliptown-admin-web-server
+      deploymentState: blocked-until-contract-evidence
+    - role: api-server
+      repository: cliptown/cliptown-api-server.rs
+      serviceName: cliptown-api-server
+      deploymentState: blocked-until-contract-evidence
+    - role: admin-api-server
+      repository: cliptown/cliptown-admin-api-server.rs
+      serviceName: cliptown-admin-api-server
+      deploymentState: blocked-until-contract-evidence
