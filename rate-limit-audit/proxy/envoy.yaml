@@ -1,0 +1,24 @@
+# Audit-only Envoy HTTP rate-limit filter example. Not wired into production.
+# The service is queried, but filter_enforced is fixed at 0%.
+http_filters:
+  - name: envoy.filters.http.ratelimit
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+      domain: ores-edge-audit
+      failure_mode_deny: false
+      filter_enabled:
+        default_value:
+          numerator: 100
+          denominator: HUNDRED
+      filter_enforced:
+        default_value:
+          numerator: 0
+          denominator: HUNDRED
+      rate_limit_service:
+        transport_api_version: V3
+        grpc_service:
+          envoy_grpc:
+            cluster_name: rate_limit_coordinator
+  - name: envoy.filters.http.router
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
