@@ -1,0 +1,54 @@
+name: rate-limit-audit
+
+on:
+  pull_request:
+    paths:
+      - "rate-limit-audit/**"
+      - ".github/workflows/rate-limit-audit.yml"
+  push:
+    branches: [main]
+    paths:
+      - "rate-limit-audit/**"
+      - ".github/workflows/rate-limit-audit.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rate-limit-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-shadow-only-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Verify Worker syntax and behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          node --check rate-limit-audit/worker.mjs
+          node --test rate-limit-audit/*.test.mjs
+
+      - name: Reject accidental enforcement or raw logging
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'limit_req_dry_run on;' rate-limit-audit/proxy/nginx.conf
+          grep -Fq 'failure_mode_deny: false' rate-limit-audit/proxy/envoy.yaml
+          if grep -En \
+            'http-request[[:space:]]+deny|return[[:space:]]+429|console\.(log|info|warn|error)' \
+            rate-limit-audit/worker.mjs \
+            rate-limit-audit/proxy/nginx.conf \
+            rate-limit-audit/proxy/envoy.yaml \
+            rate-limit-audit/proxy/haproxy.cfg; then
+            echo 'audit-only runtime/config contains an enforcement or raw logging surface' >&2
+            exit 1
+          fi
