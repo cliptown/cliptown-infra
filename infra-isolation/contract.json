@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "githubOrg": "cliptown",
+  "expectedState": "paused",
+  "mapping": {
+    "neonOrg": "org-spring-river-54568667",
+    "supabaseOrg": "rysqsjmqcdwpqwgyhvxh",
+    "cloudflareDomain": null,
+    "slackChannel": "C0BLYPGGFH6",
+    "gcpProject": "cliptown-ore",
+    "linearProject": "83b03121-db08-4e34-a69f-99fd1c873ced"
+  },
+  "areas": [
+    {
+      "role": "canonical",
+      "vpcId": null,
+      "region": null,
+      "sourceSecurityGroup": null,
+      "workloadIdentity": null,
+      "credentialRef": null
+    },
+    {
+      "role": "auth",
+      "vpcId": null,
+      "region": null,
+      "sourceSecurityGroup": null,
+      "workloadIdentity": null,
+      "credentialRef": null
+    },
+    {
+      "role": "admin",
+      "vpcId": null,
+      "region": null,
+      "sourceSecurityGroup": null,
+      "workloadIdentity": null,
+      "credentialRef": null
+    }
+  ],
+  "projects": [
+    {
+      "provider": "neon",
+      "role": "canonical",
+      "projectId": "steep-violet-76492920",
+      "region": "us-east-1",
+      "endpointIds": null
+    },
+    {
+      "provider": "neon",
+      "role": "auth",
+      "projectId": "quiet-forest-28496212",
+      "region": "us-east-1",
+      "endpointIds": null
+    },
+    {
+      "provider": "neon",
+      "role": "admin",
+      "projectId": "divine-rice-95067681",
+      "region": "us-east-1",
+      "endpointIds": null
+    },
+    {
+      "provider": "supabase",
+      "role": "canonical",
+      "projectId": "ibjxtlqatcavpyhohhqa",
+      "region": "us-east-2",
+      "endpointIds": null
+    },
+    {
+      "provider": "supabase",
+      "role": "auth",
+      "projectId": "rtlgdexigpxrndyrkgyk",
+      "region": "us-east-2",
+      "endpointIds": null
+    },
+    {
+      "provider": "supabase",
+      "role": "admin",
+      "projectId": null,
+      "region": null,
+      "endpointIds": null
+    }
+  ]
+}
