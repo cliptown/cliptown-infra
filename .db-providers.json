@@ -1,0 +1,70 @@
+{
+  "$schema": "https://github.com/ORESoftware/k8s-libs-and-shared-defs/supabase-defs/schemas/db-providers.schema.json",
+  "schemaVersion": "1.0.0",
+  "githubOrg": "cliptown",
+  "gcpProject": "cliptown-ore",
+  "slackChannel": "#cliptown",
+  "productionBranch": "main",
+  "contractSource": {
+    "repository": "cliptown/cliptown-orm-core",
+    "path": "migrations",
+    "zedPackage": "cliptown/cliptown-orm-core"
+  },
+  "supabase": {
+    "orgRef": "zmkmcdyrryxxhleytdho",
+    "orgDisplayName": "oresoftware",
+    "sharedOrg": "oresoftware",
+    "githubApp": {
+      "supabaseChangesOnly": true,
+      "deployToProduction": false,
+      "automaticBranching": true
+    },
+    "projects": [
+      {
+        "ref": "pendingcanonicalproj",
+        "slug": "canonical",
+        "role": "canonical",
+        "workingDirectory": "supabase/pendingcanonicalproj",
+        "schemaNamespace": "cliptown",
+        "migrationTarget": "own-org-later",
+        "state": "planned"
+      },
+      {
+        "ref": "szzbuljocwprjhaqnbvb",
+        "slug": "auth",
+        "role": "auth",
+        "authParent": "child",
+        "workingDirectory": "supabase/szzbuljocwprjhaqnbvb",
+        "schemaNamespace": "cliptown",
+        "migrationTarget": "own-org-later",
+        "state": "planned"
+      }
+    ]
+  },
+  "neon": {
+    "orgId": "org-cliptown",
+    "projects": [
+      {
+        "id": "cliptown-prod",
+        "slug": "prod",
+        "directory": "neon/cliptown-prod",
+        "region": "aws-us-east-1",
+        "databases": [
+          {
+            "name": "canonical",
+            "role": "canonical",
+            "owner": "cliptown_app"
+          },
+          {
+            "name": "auth",
+            "role": "auth",
+            "authParent": "child",
+            "owner": "cliptown_auth"
+          }
+        ],
+        "previewBranches": true,
+        "state": "planned"
+      }
+    ]
+  }
+}
