@@ -3,7 +3,7 @@
   "version": 1,
   "githubOrg": "cliptown",
   "integration": "ores-middleware",
-  "supabase": {"runtimeOrg":"cliptown","targetOrg":"cliptown","placement":"dedicated-org","schema":"cliptown","authDatabaseUrlEnv":"SUPABASE_AUTH_DATABASE_URL","adminDatabaseUrlEnv":"SUPABASE_ADMIN_DATABASE_URL"},
+  "supabase": {"runtimeOrg":"oresoftware","targetOrg":"cliptown","placement":"shared-org-schema","schema":"cliptown","authDatabaseUrlEnv":"SUPABASE_AUTH_DATABASE_URL","adminDatabaseUrlEnv":"SUPABASE_ADMIN_DATABASE_URL"},
   "neon": {"runtimeOrg":"cliptown","targetOrg":"cliptown","placement":"dedicated-org","schema":"cliptown","authDatabaseUrlEnv":"NEON_AUTH_DATABASE_URL","adminDatabaseUrlEnv":"NEON_ADMIN_DATABASE_URL"},
   "requestPolicy": {"requireBothProvidersConfigured":true,"customerMode":"availability-first","adminMode":"strict-paired","sensitiveMode":"strict-paired","rejectProviderDisagreement":true},
   "roles": {
