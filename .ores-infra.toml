@@ -1,0 +1,8 @@
+schema_version = 1
+layout = "modules"
+modules_root = "terraform/modules"
+environments_root = "environments"
+
+# Cliptown retains terraform/modules because the OCI toolkit workflow and docs use
+# that provider-neutral Terraform namespace. Provider-native Neon/Supabase roots
+# remain in their existing Git-integration directories.
