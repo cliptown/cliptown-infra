@@ -53,6 +53,12 @@ jobs:
           grep -Fq 'namespace: cliptown-canary' "$file"
           ! grep -Eq 'targetRevision:[[:space:]]*(main|HEAD|master|dev|latest)$' "$file"
           ! grep -Eq 'ghcr\.io/cliptown/cliptown-rust-backend\.rs:(latest|main|master|dev|HEAD)' "$file"
+          # Canary synchronization is intentionally human-authorized.
+          grep -Fq 'syncPolicy:' "$file"
+          ! grep -Eq '^[[:space:]]+automated:' "$file"
+          ! grep -Eq '^[[:space:]]+prune:[[:space:]]*true' "$file"
+          ! grep -Eq '^[[:space:]]+selfHeal:[[:space:]]*true' "$file"
+          grep -Fq 'CreateNamespace=true' "$file"
           grep -Fq 'kind: Application' /tmp/cliptown-rendered.yaml
           grep -Fq 'name: cliptown-api-canary' /tmp/cliptown-rendered.yaml
       - name: Validate canary runtime prerequisites
