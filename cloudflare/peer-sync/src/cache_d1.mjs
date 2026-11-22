@@ -3,6 +3,7 @@
 // The public Worker remains HTTP 503 until that implementation is reviewed.
 import { measuredCharge } from "./quota.mjs";
 import {
+  ADVANCE_DEVICE_WATERMARK_SQL, READ_DEVICE_WATERMARK_SQL,
   ALLOCATE_SEQUENCE_SQL, APPEND_TEXT_SQL, PRUNE_ACCOUNT_SQL,
   LOOKUP_RECEIPT_SQL, READ_CACHE_PAGE_SQL,
 } from "./cache_sql.mjs";
@@ -57,6 +58,7 @@ function checkedIdentity(proof, purpose, envelope) {
     proof.revocation_checked === true && proof.purpose === purpose &&
     ID.test(proof.account_id) && ID.test(proof.device_id) &&
     Number.isSafeInteger(proof.key_epoch) && proof.key_epoch > 0 &&
+    Number.isSafeInteger(proof.revocation_epoch) && proof.revocation_epoch >= 0 &&
     Number.isSafeInteger(proof.verified_at_ms) &&
     proof.verified_at_ms <= now + 5_000 &&
     proof.verified_at_ms >= now - MAX_ATTESTATION_AGE_MS,
@@ -64,26 +66,37 @@ function checkedIdentity(proof, purpose, envelope) {
 
   if (purpose === "text_cache.write") {
     policy(proof.signature_verified === true &&
+      proof.verified_clip_kind === "text" &&
       proof.verified_envelope_id === envelope.envelope_id &&
-      proof.verified_ciphertext_digest === envelope.digest,
+      proof.verified_ciphertext_digest === envelope.digest &&
+      proof.verified_key_epoch === proof.key_epoch &&
+      Number.isSafeInteger(proof.verified_device_sequence) &&
+      proof.verified_device_sequence > 0 &&
+      proof.verified_device_sequence < Number.MAX_SAFE_INTEGER,
     "cache_envelope_signature_required");
   }
-  return {account_id: proof.account_id, device_id: proof.device_id};
+  return {
+    account_id: proof.account_id,
+    device_id: proof.device_id,
+    device_sequence: purpose === "text_cache.write"
+      ? proof.verified_device_sequence : null,
+  };
 }
 
 function sameReceipt(receipt, identity, digest, bytes) {
   return receipt !== null && receipt !== undefined &&
     receipt.device_id === identity.device_id &&
+    receipt.device_sequence === identity.device_sequence &&
     receipt.ciphertext_digest === digest &&
     receipt.ciphertext_bytes === bytes &&
     Number.isSafeInteger(receipt.server_sequence) && receipt.server_sequence > 0;
 }
 
 function mustBatchSucceed(results) {
-  policy(Array.isArray(results) && results.length === 4 &&
+  policy(Array.isArray(results) && results.length === 5 &&
     results.every((item) => item && item.success === true),
   "cache_commit_unavailable");
-  const receipt = results[3]?.results?.[0];
+  const receipt = results[4]?.results?.[0];
   policy(receipt && Number.isSafeInteger(receipt.server_sequence) &&
     receipt.server_sequence > 0, "cache_receipt_unavailable");
   return receipt;
@@ -123,6 +136,10 @@ export function createEncryptedTextCache(db, verifyDeviceRequest) {
     return db.prepare(LOOKUP_RECEIPT_SQL).bind(account, id).first();
   }
 
+  async function watermark(account, device) {
+    return db.prepare(READ_DEVICE_WATERMARK_SQL).bind(account, device).first();
+  }
+
   return Object.freeze({
     async append(request, input) {
       // Synchronous snapshot: the caller cannot mutate this queued payload
@@ -143,14 +160,24 @@ export function createEncryptedTextCache(db, verifyDeviceRequest) {
         return {server_sequence: previous.server_sequence, duplicate: true};
       }
 
+      // Early replay denial improves errors, but the SQL trigger in the
+      // atomic batch is authoritative against concurrent requests/races.
+      const priorWatermark = await watermark(identity.account_id, identity.device_id);
+      policy(!priorWatermark ||
+        (Number.isSafeInteger(priorWatermark.last_device_sequence) &&
+         identity.device_sequence > priorWatermark.last_device_sequence),
+      "cache_device_replay");
+
       const charge = measuredCharge(source.ciphertext.byteLength);
       const now = Date.now();
       const statements = [
+        db.prepare(ADVANCE_DEVICE_WATERMARK_SQL).bind(
+          identity.account_id, identity.device_id, identity.device_sequence),
         db.prepare(ALLOCATE_SEQUENCE_SQL).bind(identity.account_id),
         db.prepare(APPEND_TEXT_SQL).bind(
           identity.account_id, source.envelope_id, source.ciphertext,
           digest, source.ciphertext.byteLength, charge, now,
-          identity.device_id, identity.account_id),
+          identity.device_id, identity.device_sequence, identity.account_id),
         db.prepare(PRUNE_ACCOUNT_SQL).bind(identity.account_id, identity.account_id),
         db.prepare(LOOKUP_RECEIPT_SQL).bind(identity.account_id, source.envelope_id),
       ];
@@ -166,6 +193,13 @@ export function createEncryptedTextCache(db, verifyDeviceRequest) {
         const after = await receipt(identity.account_id, source.envelope_id);
         if (sameReceipt(after, identity, digest, source.ciphertext.byteLength)) {
           return {server_sequence: after.server_sequence, duplicate: true};
+        }
+        // Eviction may erase the per-item receipt; a persistent device
+        // watermark still prohibits re-adding an old signed mutation.
+        const last = await watermark(identity.account_id, identity.device_id);
+        if (last && Number.isSafeInteger(last.last_device_sequence) &&
+            last.last_device_sequence >= identity.device_sequence) {
+          throw new CacheAccessError("cache_device_replay");
         }
         throw new CacheAccessError("cache_commit_unavailable");
       }
