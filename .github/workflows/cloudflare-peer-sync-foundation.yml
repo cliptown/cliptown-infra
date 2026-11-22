@@ -1,0 +1,41 @@
+name: Cloudflare peer-sync foundation
+on:
+  pull_request:
+    paths:
+      - 'cloudflare/peer-sync/**'
+      - '.github/workflows/cloudflare-peer-sync-foundation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare/peer-sync/**'
+      - '.github/workflows/cloudflare-peer-sync-foundation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR/source SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+      - name: Check Worker syntax
+        run: node --check cloudflare/peer-sync/src/index.mjs && node --check cloudflare/peer-sync/src/quota.mjs
+      - name: Run actual quota tests (no skipped/fake PASS)
+        run: node --test cloudflare/peer-sync/test/quota.test.mjs
+      - name: Verify D1 SQL with independent SQLite runtime
+        run: python3 -B cloudflare/peer-sync/test/check_d1_contract.py
+      - name: Verify deploy remains locked
+        run: |
+          grep -F 'return locked(); // No unauthenticated websocket' cloudflare/peer-sync/src/index.mjs
+          grep -F 'return locked();' cloudflare/peer-sync/src/index.mjs
+          grep -F 'ready: false' cloudflare/peer-sync/src/index.mjs
