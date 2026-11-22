@@ -13,7 +13,8 @@ import subprocess
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONNECTION_ROOT = ROOT.parents[1]
 SOURCE = """import * as q from './cloudflare/peer-sync/src/cache_sql.mjs';
-process.stdout.write(JSON.stringify(q));"""
+import * as n from './cloudflare/peer-sync/src/device_nonces.mjs';
+process.stdout.write(JSON.stringify({...q,...n}));"""
 output = subprocess.run(
     ["node", "--input-type=module", "-e", SOURCE],
     cwd=CONNECTION_ROOT,
@@ -30,7 +31,7 @@ def database():
     db.row_factory = sqlite3.Row
     for filename in (
         "0001_encrypted_text_cache.sql", "0002_account_sequences.sql",
-        "0003_device_replay_watermarks.sql"
+        "0003_device_replay_watermarks.sql", "0004_signed_request_nonces.sql"
     ):
         db.executescript((ROOT / "migrations" / filename).read_text())
     return db
@@ -206,6 +207,43 @@ def test_rollback_guards_signed_device_watermark():
     assert append(db, "alpha", "good", device_sequence=2) == 2
     db.close()
 
+
+def test_one_use_nonce_store_is_bounded_and_account_scoped():
+    db = database()
+    now = 1700000000000
+    def consume(account, device, nonce, at=now, expiry=now + 30_000):
+        with db:
+            db.execute(SQL["DELETE_EXPIRED_NONCES_SQL"], (account, at))
+            return db.execute(SQL["CONSUME_DEVICE_NONCE_SQL"], (
+                account, device, nonce, expiry, account, at
+            )).rowcount == 1
+
+    nonce = "A" * 26
+    assert consume("alpha", "device_a", nonce)
+    assert not consume("alpha", "device_a", nonce)
+    assert consume("alpha", "device_b", nonce)
+    assert consume("beta", "device_a", nonce)
+    assert db.execute("SELECT COUNT(*) FROM cloud_cache_request_nonces "
+                      "WHERE account_id='alpha'").fetchone()[0] == 2
+
+    for index in range(1022):
+        assert consume("alpha", "device_a", str(index).zfill(22))
+    assert db.execute("SELECT COUNT(*) FROM cloud_cache_request_nonces "
+                      "WHERE account_id='alpha'").fetchone()[0] == 1024
+    assert not consume("alpha", "device_a", "Z" * 24)
+    assert consume("beta", "device_a", "Z" * 24)
+
+    # A resumed client cannot replay an old signed proof while its nonce is
+    # still within expiry. The database reclaims nonce control state after
+    # expiration, but the verifier rejects that old signed proof by time.
+    future = now + 31_000
+    assert consume("alpha", "device_a", "Z" * 24, at=future, expiry=future+30_000)
+    assert db.execute("SELECT COUNT(*) FROM cloud_cache_request_nonces "
+                      "WHERE account_id='alpha'").fetchone()[0] == 1
+    assert db.execute("SELECT COUNT(*) FROM cloud_cache_request_nonces "
+                      "WHERE account_id='beta'").fetchone()[0] == 2
+    db.close()
+
 if __name__ == "__main__":
     test_account_and_item_limits()
     test_byte_quota_and_atomic_conflict()
@@ -213,4 +251,5 @@ if __name__ == "__main__":
     test_no_account_cross_talk_and_prune_file_parity()
     test_eviction_replay_and_cross_device_sequence_isolation()
     test_rollback_guards_signed_device_watermark()
+    test_one_use_nonce_store_is_bounded_and_account_scoped()
     print("PASS: exact D1 SQL in SQLite; quota, sequence, rollback, paging, isolation")
