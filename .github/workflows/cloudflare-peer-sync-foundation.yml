@@ -35,6 +35,8 @@ jobs:
           node --check cloudflare/peer-sync/src/cache_sql.mjs
           node --check cloudflare/peer-sync/src/cache_d1.mjs
           node --check cloudflare/peer-sync/src/turn_grants.mjs
+          node --check cloudflare/peer-sync/src/device_authorization.mjs
+          node --check cloudflare/peer-sync/src/device_nonces.mjs
       - name: Run quota, access-control and D1 adapter tests
         run: node --test cloudflare/peer-sync/test/*.test.mjs
       - name: Verify D1 SQL with independent SQLite runtime
