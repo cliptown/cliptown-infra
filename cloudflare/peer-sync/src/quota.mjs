@@ -35,14 +35,16 @@ export function planRetention(envelopes) {
   rows.sort((a, b) => b.server_sequence - a.server_sequence ||
     (a.envelope_id < b.envelope_id ? 1 : a.envelope_id > b.envelope_id ? -1 : 0));
   const retained = [], evicted = [];
-  let bytes = 0;
-  for (const row of rows) {
-    if (retained.length < MAX_TEXT_ITEMS && bytes + row.stored_bytes <= MAX_LOGICAL_BYTES) {
+  let cumulative = 0;
+  let retainedBytes = 0;
+  rows.forEach((row, index) => {
+    cumulative += row.stored_bytes;
+    if (index < MAX_TEXT_ITEMS && cumulative <= MAX_LOGICAL_BYTES) {
       retained.push(row.envelope_id);
-      bytes += row.stored_bytes;
+      retainedBytes = cumulative;
     } else {
       evicted.push(row.envelope_id);
     }
-  }
-  return {retained, evicted, retained_count: retained.length, logical_bytes: bytes};
+  });
+  return {retained, evicted, retained_count: retained.length, logical_bytes: retainedBytes};
 }
