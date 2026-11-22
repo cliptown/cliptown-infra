@@ -30,10 +30,16 @@ jobs:
           node-version: '22.16.0'
       - name: Check Worker syntax
         run: node --check cloudflare/peer-sync/src/index.mjs && node --check cloudflare/peer-sync/src/quota.mjs
-      - name: Run actual quota tests (no skipped/fake PASS)
-        run: node --test cloudflare/peer-sync/test/quota.test.mjs
+      - name: Syntax check all service modules
+        run: |
+          node --check cloudflare/peer-sync/src/cache_sql.mjs
+          node --check cloudflare/peer-sync/src/cache_d1.mjs
+      - name: Run quota, access-control and D1 adapter tests
+        run: node --test cloudflare/peer-sync/test/*.test.mjs
       - name: Verify D1 SQL with independent SQLite runtime
         run: python3 -B cloudflare/peer-sync/test/check_d1_contract.py
+      - name: Verify exact D1 batch SQL in independent SQLite runtime
+        run: python3 -B cloudflare/peer-sync/test/check_d1_batch.py
       - name: Verify deploy remains locked
         run: |
           grep -F 'return locked(); // No unauthenticated websocket' cloudflare/peer-sync/src/index.mjs
