@@ -29,24 +29,34 @@ def database():
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     for filename in (
-        "0001_encrypted_text_cache.sql", "0002_account_sequences.sql"
+        "0001_encrypted_text_cache.sql", "0002_account_sequences.sql",
+        "0003_device_replay_watermarks.sql"
     ):
         db.executescript((ROOT / "migrations" / filename).read_text())
     return db
 
 
-def append(db, account, name, ciphertext=b"\x01", device="device_a"):
+def append(db, account, name, ciphertext=b"\x01", device="device_a",
+           device_sequence=None):
     digest = hashlib.sha256(ciphertext).hexdigest()
     with db:
+        if device_sequence is None:
+            last = db.execute(SQL["READ_DEVICE_WATERMARK_SQL"],
+                              (account, device)).fetchone()
+            device_sequence = 1 if last is None else last[0] + 1
+        db.execute(SQL["ADVANCE_DEVICE_WATERMARK_SQL"],
+                   (account, device, device_sequence))
         db.execute(SQL["ALLOCATE_SEQUENCE_SQL"], (account,))
         db.execute(
             SQL["APPEND_TEXT_SQL"],
             (account, name, ciphertext, digest, len(ciphertext),
-             len(ciphertext) + 512, 1700000000000, device, account),
+             len(ciphertext) + 512, 1700000000000, device,
+             device_sequence, account),
         )
         db.execute(SQL["PRUNE_ACCOUNT_SQL"], (account, account))
         receipt = db.execute(SQL["LOOKUP_RECEIPT_SQL"], (account, name)).fetchone()
         assert receipt is not None
+        assert receipt["device_sequence"] == device_sequence
         return receipt["server_sequence"]
 
 
@@ -146,9 +156,61 @@ def test_no_account_cross_talk_and_prune_file_parity():
     db.close()
 
 
+
+def test_eviction_replay_and_cross_device_sequence_isolation():
+    db = database()
+    for index in range(2001):
+        append(db, "alpha", "clip_" + str(index), device_sequence=index + 1)
+    assert "clip_0" not in records(db, "alpha")
+    assert db.execute(SQL["READ_DEVICE_WATERMARK_SQL"],
+                      ("alpha", "device_a")).fetchone()[0] == 2001
+    # Same formerly-stored envelope after eviction must not be reinserted.
+    for stale in (1, 2001, 1999):
+        try:
+            append(db, "alpha", "clip_0", device_sequence=stale)
+            raise AssertionError("accepted stale signed device sequence")
+        except sqlite3.IntegrityError:
+            pass
+    assert "clip_0" not in records(db, "alpha")
+    assert db.execute(
+        "SELECT last_sequence FROM cloud_cache_account_sequences WHERE account_id='alpha'"
+    ).fetchone()[0] == 2001
+    # Independent enrolled device sequence cannot advance another device's
+    # watermark, nor another account sharing the same device name.
+    assert append(db, "alpha", "clip_b", device="device_b",
+                  device_sequence=1) == 2002
+    assert append(db, "beta", "clip_a", device="device_a",
+                  device_sequence=1) == 1
+    assert db.execute(SQL["READ_DEVICE_WATERMARK_SQL"],
+                      ("alpha", "device_a")).fetchone()[0] == 2001
+    db.close()
+
+
+def test_rollback_guards_signed_device_watermark():
+    db = database()
+    append(db, "alpha", "keep", device_sequence=1)
+    db.execute(
+        "CREATE TRIGGER reject_insert BEFORE INSERT ON encrypted_text_envelopes "
+        "WHEN NEW.envelope_id='boom' BEGIN SELECT RAISE(ABORT,'injected'); END"
+    )
+    try:
+        append(db, "alpha", "boom", device_sequence=2)
+        raise AssertionError("stale read/write state committed after failed append")
+    except sqlite3.IntegrityError:
+        pass
+    assert db.execute(SQL["READ_DEVICE_WATERMARK_SQL"],
+                      ("alpha", "device_a")).fetchone()[0] == 1
+    assert db.execute(
+        "SELECT last_sequence FROM cloud_cache_account_sequences WHERE account_id='alpha'"
+    ).fetchone()[0] == 1
+    assert append(db, "alpha", "good", device_sequence=2) == 2
+    db.close()
+
 if __name__ == "__main__":
     test_account_and_item_limits()
     test_byte_quota_and_atomic_conflict()
     test_prune_failure_rolls_back_sequence_and_insert()
     test_no_account_cross_talk_and_prune_file_parity()
+    test_eviction_replay_and_cross_device_sequence_isolation()
+    test_rollback_guards_signed_device_watermark()
     print("PASS: exact D1 SQL in SQLite; quota, sequence, rollback, paging, isolation")
