@@ -5,7 +5,7 @@ import sqlite3
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCHEMA = (ROOT / "migrations/0001_encrypted_text_cache.sql").read_text()
-PRUNE = (ROOT / "migrations/0002_prune_account.sql").read_text()
+PRUNE = (ROOT / "queries/prune_account.sql").read_text()
 
 
 def put(db, account, item, seq, size=1):
