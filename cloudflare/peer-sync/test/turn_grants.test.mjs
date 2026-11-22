@@ -6,6 +6,7 @@ const secret = "test_only_secret_".repeat(4);
 const request = {test_request: "not a real credential"};
 const validProof = (purpose, overrides = {}) => ({
   purpose, authenticated: true, active_device: true, revocation_checked: true,
+  account_id: "account_a", device_id: "device_a", revocation_epoch: 4,
   key_epoch: 1, verified_at_ms: Date.now(), ...overrides,
 });
 const granted = {
@@ -31,7 +32,8 @@ test("revoked, stale or wrong-purpose requests never request credentials", async
   for (const changes of [
     {active_device:false}, {revocation_checked:false},
     {verified_at_ms:Date.now()-90_000}, {purpose:"text_cache.read"},
-    {authenticated:false},
+    {authenticated:false}, {account_id:"spoofed account"},
+    {device_id:"../../../escape"}, {revocation_epoch:-1},
   ]) {
     let calls = 0;
     const issuer = createTurnIssuer({
