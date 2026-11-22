@@ -194,3 +194,54 @@ Local checks:
 
 These are offline tests and neither access user data nor create provider
 resources.
+
+## Authentication and replay hardening (internal, undeployed)
+
+The new internal modules are:
+
+- `device_authorization.mjs`: requires the official protected
+  `SharedAuthClient.introspect(token, audience, requiredScopes)` result
+  and a separately trusted active enrolled-device directory. Denies if
+  introspection is unavailable, the subject/tenant/application/issuer/audience
+  differ, the token is inactive/expired/delegated, the scope is missing, the
+  current device key or revocation epoch disagrees, or the Ed25519 signature
+  over canonical metadata fails. No client-provided account ID or public key
+  is accepted as authority. Proofs are short-lived and bound to one purpose.
+- `device_nonces.mjs`: uses an atomic D1 batch to discard expired per-account
+  nonce records and insert a unique signed nonce. Duplicate, exhausted-cap,
+  invalid or provider-unavailable attempts fail closed. At most 1,024 active
+  nonce records per account are admitted at a time. No raw clipboard content
+  or auth token is stored in the nonce table.
+- `migrations/0003_device_replay_watermarks.sql`: records the strictly
+  increasing signed sequence for each enrolled account/device independent
+  of cache pruning. A database trigger rejects any equal or lower sequence
+  in the same D1 transaction as allocation/insertion/retention. Cache
+  eviction does not erase the device watermark.
+- `migrations/0004_signed_request_nonces.sql`: persists replay nonces
+  independently of the clipboard cache. Expired nonces are reclaimed on
+  authenticated requests, without dropping active nonce protection.
+
+This implementation has credential-free adversarial tests using real Node
+WebCrypto Ed25519 signatures, fake official-introspection responses and an
+independent SQLite execution of actual D1 SQL. These DO NOT prove an active
+production Shared Auth instance, production enrollment registry, live D1
+provider or hardware-backed device keys. The public Worker remains a
+non-ready 503 scaffold; no real credential is ever committed or used.
+
+The signing format is frozen in the sibling draft
+`cliptown-interfaces#49` under
+`json-schema/cloudflare-device-proof-v1.schema.json` and
+`fixtures/cloudflare-device-proof-canonical-v1.json`. Cross-runtime bytes
+are validated in Rust/Dart/TypeScript CI. Source scopes and canonical
+tenant/application IDs require deployment review.
+
+A D1 outage must not automatically break existing direct LAN/BLE/P2P links.
+Durable Object WebSocket signaling will use its own independently available
+nonce/replay store rather than relying on the D1 cache.
+
+Remaining release blockers: adopt the PINNED official SDK and real enrolled
+key registry in the Worker; wire protected account-scoped routes; add
+production-grade rate limits and TURN spending limits; validate tombstone and
+key-rotation semantics after revocation; complete cross-device, cross-client
+and provider canaries, rollback and deployment custody. Keep all protected
+routes disabled until these pass.
