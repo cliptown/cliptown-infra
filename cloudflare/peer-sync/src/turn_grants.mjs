@@ -4,6 +4,7 @@
 // and a reviewed Shared Auth + enrolled device verifier.
 const TURN_TTL_SECONDS = 900;
 const KEY_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const DEVICE_ID = /^[A-Za-z0-9:_-]{1,128}$/;
 const CREDENTIAL_TEXT = /^[A-Za-z0-9._~+-]{1,512}$/;
 const TURN_URL = /^(?:stun:stun\.cloudflare\.com:3478|turn:turn\.cloudflare\.com:(?:3478|443|80)\?transport=(?:udp|tcp)|turns:turn\.cloudflare\.com:(?:5349|443)\?transport=tcp)$/;
 
@@ -25,6 +26,8 @@ function authorizedIdentity(proof) {
     proof.active_device === true &&
     proof.revocation_checked === true &&
     proof.purpose === "peer_turn.issue" &&
+    DEVICE_ID.test(proof.account_id) && DEVICE_ID.test(proof.device_id) &&
+    Number.isSafeInteger(proof.revocation_epoch) && proof.revocation_epoch >= 0 &&
     Number.isSafeInteger(proof.key_epoch) && proof.key_epoch > 0 &&
     Number.isSafeInteger(proof.verified_at_ms) &&
     proof.verified_at_ms <= now + 5_000 &&
