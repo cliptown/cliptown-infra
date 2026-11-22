@@ -141,3 +141,56 @@ From the repository root:
 Do not copy wrangler.example.jsonc into a deployable config until real D1
 identifiers, migration ownership, provider secrets and authentication gates
 have been reviewed and tested.
+
+## Current implementation slice: internal adapters, not live APIs
+
+The optional Cloudflare provider adapters now exist as internal ES modules:
+
+- src/cache_d1.mjs prepares D1 encrypted-text insert, server-issued account
+  receipt allocation, retention pruning and receipt return as one db.batch
+  transaction. A separately reviewed verifier must establish account/device
+  ownership, revocation, ciphertext signature and exact digest binding.
+  Input clip data cannot supply the account_id used for D1 access.
+- src/cache_sql.mjs contains parameterized write and bounded page queries;
+  migration 0002_account_sequences.sql preserves cloud receipt positions
+  across cache eviction.
+- Async JavaScript ciphertext is cloned before the first await. Unlike Rust
+  borrowed slices, a Uint8Array may be modified by its owner. Regression
+  tests mutate the source buffer immediately and ensure the database sees
+  the original owned snapshot.
+- src/turn_grants.mjs creates fixed 900-second Cloudflare Realtime TURN
+  credentials using a server-only token and enrolled device authorization.
+  Unsupported relay URLs, revoked credentials and upstream errors fail closed.
+  The long-term TURN token is never sent to any client.
+- The Worker and Durable Object still return HTTP 503 for all sync and TURN
+  requests. No provider adapter is called from a public route. There is no
+  live ingestion, active WebSocket signaling or actual TURN credential grant.
+- This PR does not provision a D1 database, Durable Object, provider
+  credentials or any Cloudflare production deployment.
+
+### Remaining hard gates
+
+1. Supply the actual reviewed Shared Auth and enrolled-device cryptographic
+   verifier. Tests with injected verifiers prove guard decisions but are not
+   real cryptographic or external identity-provider evidence.
+2. Add a compact durable mutation-receipt/high-watermark control plane.
+   An old immutable envelope retried *after D1 cache eviction* must not
+   reappear as a new clip. Same-record duplicate replay and immutable digest
+   conflicts are tested, but long-expired replay remains a release blocker.
+3. Verify a signed text media-kind and exact ciphertext digest together.
+   Opaque ciphertext alone cannot prove the concealed media type.
+4. Build authorized hibernating Durable Object signaling with replay/rate
+   limits and approved device revocation checks.
+5. Enforce Cloudflare TURN issue rate limits and spending budgets, then
+   execute live TURN/D1 canary and outage tests before activation.
+6. Implement encrypted sync client adapters on both Flutter and native Rust
+   desktops, with tombstone, offline and partial-restore validation.
+
+Local checks:
+
+    node --test cloudflare/peer-sync/test/*.test.mjs
+    python3 -B cloudflare/peer-sync/test/check_d1_contract.py
+    python3 -B cloudflare/peer-sync/test/check_d1_batch.py
+
+These are offline tests and neither access user data nor create provider
+resources.
